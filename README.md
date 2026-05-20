@@ -1,8 +1,33 @@
 # Harvest Tool
 
+[![Python 3.9+](https://img.shields.io/badge/python-3.9+-blue.svg)](https://www.python.org/downloads/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+
 ## 一句话
 
 `harvest-tool` 用来做 GitHub 借鉴型调研：先找仓库，再筛 shortlist，再抓资料，最后沉成共识文档。
+
+## 安装
+
+```bash
+# 1. 克隆仓库
+git clone https://github.com/Xinyuexyyyyy/harvest-tool.git
+cd harvest-tool
+
+# 2. 确保 GitHub CLI 已安装并登录
+gh auth status
+# 如果未登录，先运行：gh auth login
+
+# 3. 直接运行（无需额外 Python 依赖）
+python3 skill.py discover "deep research" 5
+```
+
+或使用 pip 安装：
+
+```bash
+pip install -e .
+harvest discover "deep research" 5
+```
 
 ## 先看效果
 
