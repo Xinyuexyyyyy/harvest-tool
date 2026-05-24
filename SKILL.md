@@ -1,6 +1,6 @@
 ---
 name: harvest-tool
-description: 当用户想找可借鉴的 GitHub 项目、筛成熟方案、抓仓库资料并沉成共识文档时使用。它负责发现、抓取、整理，不负责替用户拍板产品方向；依赖 gh CLI，若未登录或输入不是 GitHub 仓库链接就先停下并提示。
+description: 当用户想找可借鉴的 GitHub 项目、筛成熟方案、抓仓库资料并沉成共识文档时使用。它负责把“借鉴什么、怎么借、哪些不抄”收成一条稳定流程，不负责替用户拍板产品方向；依赖 gh CLI，若未登录或输入不是 GitHub 仓库链接就先停下并提示。
 status: stable
 agents: main
 ---
@@ -11,10 +11,19 @@ agents: main
 
 把“我想找能借鉴的 GitHub 项目”收成一条可复用路径：先发现，再筛选，再抓取，最后沉成结构化共识。
 
+它在防的坑很明确：
+
+- 一上来就硬抄，没先看清仓库在解决什么
+- 候选太多，但没有先收敛 shortlist
+- 只抓到资料，没沉成可继续讨论的共识
+- 最后写成参考笔记，却没有明确哪些能直接借、哪些要改造、哪些只参考
+
 先看什么：
 1. 先看本文件，确认什么时候该用 `harvest-tool`
-2. 再看 [README.md](README.md)，看完整操作和验收方式
-3. 排错时再看 `skill.py` 和 `scripts/`
+2. 如果用户给了 GitHub 仓库并要求生成共识草稿，读取 [docs/github-harvest-to-consensus.md](docs/github-harvest-to-consensus.md)
+3. 需要样例时读取 [docs/github-harvest-examples.md](docs/github-harvest-examples.md)，需要验收时读取 [docs/github-harvest-acceptance.md](docs/github-harvest-acceptance.md)
+4. 再看 [README.md](README.md)，看完整操作和验收方式
+5. 排错时再看 `skill.py` 和 `scripts/`
 
 ## 什么时候用
 
@@ -33,6 +42,10 @@ agents: main
 ## 默认工作方式
 
 不要让用户自己手敲命令。用户只需要讲目标，你在内部按阶段调用。
+
+如果用户已经给了明确 GitHub 仓库链接，就直接进入 `harvest`，不要重复 discover/evaluate。
+
+如果用户的目标是“把 GitHub 项目借鉴结果沉成共识草稿”，按 `github-harvest-to-consensus` 任务书执行：补全仓库链接、运行 harvest/analyze、分出“直接用 / 改造用 / 只参考 / 不抄”、落盘到 `task_draft/consensus/<独立子目录>/`，最后给出可验证文件路径。
 
 ## 六阶段流程
 
@@ -61,6 +74,14 @@ Stage 6: Consensus -> 落成共识文档，方便后续执行
 ### 检查点 3：写共识前先确认结论方向
 
 先给出“准备直接借鉴什么 / 只参考什么 / 明确不抄什么”，等用户确认后再正式落盘。
+
+### 检查点 4：结论必须能一眼复核
+
+最后输出里必须有：
+- 这个仓库解决什么问题
+- 哪些东西可以直接借
+- 哪些东西要改造后借
+- 哪些东西只做方法参考
 
 ## Action
 
@@ -120,6 +141,19 @@ python3 skill.py consensus '{"做什么": "...", "从哪里抄": {"直接用": [
 
 把已经讨论好的结论保存成共识文档。
 
+### `github-harvest-to-consensus`
+
+不是独立 CLI 命令，而是一条上层任务书。用户给 GitHub 仓库和主题任务时，按 [docs/github-harvest-to-consensus.md](docs/github-harvest-to-consensus.md) 执行，最终必须产出独立共识目录和验收说明。
+
+## 结果长什么样
+
+一眼要能看到这 4 件事：
+
+- 仓库解决什么问题
+- 哪些做法可以直接借
+- 哪些做法要改造后借
+- 哪些只做方法参考
+
 ## 边界条件
 
 ### 情况 1：用户目标太模糊
@@ -172,3 +206,4 @@ python3 skills/harvest-tool/skill.py evaluate
 - discover 能返回候选仓库列表
 - evaluate 能输出可供人工筛选的输入材料
 - 整个过程不要求用户自己理解内部脚本结构
+- 最终共识能稳定落到 `task_draft/consensus/<独立子目录>/`

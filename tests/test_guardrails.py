@@ -219,6 +219,114 @@ class GuardrailsTest(unittest.TestCase):
         self.assertIn(".codex-plugin/plugin.json", names)
         self.assertIn("skills/brainstorming/SKILL.md", names)
 
+    def test_fetch_key_files_samples_bucketed_skill_directories(self) -> None:
+        structure = {
+            "root_files": ["CLAUDE.md"],
+            "directories": ["skills", ".claude-plugin"],
+        }
+
+        def fake_run(args, capture_output=True, text=True, timeout=10):
+            api_path = args[2]
+            if api_path.endswith("/contents/skills"):
+                return subprocess.CompletedProcess(
+                    args=args,
+                    returncode=0,
+                    stdout=(
+                        '{"name":"engineering","path":"skills/engineering","type":"dir","download_url":null}\n'
+                        '{"name":"productivity","path":"skills/productivity","type":"dir","download_url":null}\n'
+                    ),
+                    stderr="",
+                )
+            if api_path.endswith("/contents/skills/engineering"):
+                return subprocess.CompletedProcess(
+                    args=args,
+                    returncode=0,
+                    stdout='{"name":"grill-with-docs","path":"skills/engineering/grill-with-docs","type":"dir","download_url":null}\n',
+                    stderr="",
+                )
+            if api_path.endswith("/contents/skills/productivity"):
+                return subprocess.CompletedProcess(
+                    args=args,
+                    returncode=0,
+                    stdout='{"name":"handoff","path":"skills/productivity/handoff","type":"dir","download_url":null}\n',
+                    stderr="",
+                )
+            raise AssertionError(f"unexpected gh api call: {api_path}")
+
+        def fake_fetch_file_content(url):
+            if url.endswith("/skills/engineering/SKILL.md") or url.endswith("/skills/productivity/SKILL.md"):
+                return ""
+            return f"content for {url}"
+
+        with patch("scripts.harvest.subprocess.run", side_effect=fake_run), patch(
+            "scripts.harvest.fetch_file_content",
+            side_effect=fake_fetch_file_content,
+        ):
+            result = fetch_key_files("mattpocock", "skills", structure)
+
+        sample_names = [item["name"] for item in result["skill_samples"]]
+        file_names = [item["name"] for item in result["files"]]
+        self.assertIn("skills/engineering/grill-with-docs/SKILL.md", sample_names)
+        self.assertIn("skills/productivity/handoff/SKILL.md", sample_names)
+        self.assertIn("skills/engineering/grill-with-docs/SKILL.md", file_names)
+
+    def test_fetch_key_files_prioritizes_promoted_skill_buckets(self) -> None:
+        structure = {
+            "root_files": ["CLAUDE.md"],
+            "directories": ["skills"],
+        }
+
+        def fake_run(args, capture_output=True, text=True, timeout=10):
+            api_path = args[2]
+            if api_path.endswith("/contents/skills"):
+                return subprocess.CompletedProcess(
+                    args=args,
+                    returncode=0,
+                    stdout=(
+                        '{"name":"deprecated","path":"skills/deprecated","type":"dir","download_url":null}\n'
+                        '{"name":"engineering","path":"skills/engineering","type":"dir","download_url":null}\n'
+                        '{"name":"productivity","path":"skills/productivity","type":"dir","download_url":null}\n'
+                    ),
+                    stderr="",
+                )
+            if api_path.endswith("/contents/skills/deprecated"):
+                return subprocess.CompletedProcess(
+                    args=args,
+                    returncode=0,
+                    stdout='{"name":"old","path":"skills/deprecated/old","type":"dir","download_url":null}\n',
+                    stderr="",
+                )
+            if api_path.endswith("/contents/skills/engineering"):
+                return subprocess.CompletedProcess(
+                    args=args,
+                    returncode=0,
+                    stdout='{"name":"diagnose","path":"skills/engineering/diagnose","type":"dir","download_url":null}\n',
+                    stderr="",
+                )
+            if api_path.endswith("/contents/skills/productivity"):
+                return subprocess.CompletedProcess(
+                    args=args,
+                    returncode=0,
+                    stdout='{"name":"handoff","path":"skills/productivity/handoff","type":"dir","download_url":null}\n',
+                    stderr="",
+                )
+            raise AssertionError(f"unexpected gh api call: {api_path}")
+
+        def fake_fetch_file_content(url):
+            if url.endswith("/skills/deprecated/SKILL.md") or url.endswith("/skills/engineering/SKILL.md") or url.endswith("/skills/productivity/SKILL.md"):
+                return ""
+            return f"content for {url}"
+
+        with patch("scripts.harvest.subprocess.run", side_effect=fake_run), patch(
+            "scripts.harvest.fetch_file_content",
+            side_effect=fake_fetch_file_content,
+        ):
+            result = fetch_key_files("mattpocock", "skills", structure)
+
+        sample_names = [item["name"] for item in result["skill_samples"]]
+        self.assertEqual(sample_names[0], "skills/engineering/diagnose/SKILL.md")
+        self.assertEqual(sample_names[1], "skills/productivity/handoff/SKILL.md")
+
     def test_fetch_key_files_reserves_slots_for_source_samples(self) -> None:
         structure = {
             "root_files": [
@@ -294,6 +402,68 @@ class GuardrailsTest(unittest.TestCase):
         self.assertIn("仓库画像", text)
         self.assertIn("材料置信度", text)
         self.assertIn("技能/方法论框架仓库", text)
+
+    def test_format_analysis_input_includes_skill_samples_section(self) -> None:
+        text = format_analysis_input(
+            {
+                "project": "mattpocock/skills",
+                "status": "ok",
+                "readme": {"raw": "Skills for real engineers"},
+                "structure": {
+                    "root_files": ["CLAUDE.md"],
+                    "directories": ["skills", ".claude-plugin"],
+                },
+                "code_files": {
+                    "files": [
+                        {
+                            "name": "skills/engineering/grill-with-docs/SKILL.md",
+                            "content": "---\nname: grill-with-docs\n---",
+                        }
+                    ],
+                    "skill_samples": [
+                        {
+                            "name": "skills/engineering/grill-with-docs/SKILL.md",
+                            "content": "---\nname: grill-with-docs\n---",
+                        }
+                    ],
+                },
+                "warnings": [],
+            }
+        )
+        self.assertIn("Skill 样本文件", text)
+        self.assertIn("skills/engineering/grill-with-docs/SKILL.md", text)
+
+    def test_format_analysis_input_does_not_duplicate_skill_samples_as_core_files(self) -> None:
+        text = format_analysis_input(
+            {
+                "project": "mattpocock/skills",
+                "status": "ok",
+                "readme": {"raw": "Skills for real engineers"},
+                "structure": {
+                    "root_files": ["CLAUDE.md"],
+                    "directories": ["skills", ".claude-plugin"],
+                },
+                "code_files": {
+                    "files": [
+                        {
+                            "name": "skills/engineering/diagnose/SKILL.md",
+                            "content": "---\nname: diagnose\n---",
+                        },
+                        {"name": "scripts/list-skills.sh", "content": "find . -name SKILL.md"},
+                    ],
+                    "skill_samples": [
+                        {
+                            "name": "skills/engineering/diagnose/SKILL.md",
+                            "content": "---\nname: diagnose\n---",
+                        }
+                    ],
+                },
+                "warnings": [],
+            }
+        )
+        self.assertIn("Skill 样本文件", text)
+        self.assertIn("核心代码文件（共 1 个）", text)
+        self.assertIn("### scripts/list-skills.sh", text)
 
     def test_save_analysis_summary_writes_profile_and_readiness(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:

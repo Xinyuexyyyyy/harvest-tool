@@ -7,6 +7,12 @@
 
 `harvest-tool` 用来做 GitHub 借鉴型调研：先找仓库，再筛 shortlist，再抓资料，最后沉成共识文档。
 
+## 常用任务书
+
+- `docs/github-harvest-to-consensus.md`：用户给 GitHub 仓库和主题任务时，按“抓取 -> 分析 -> 借鉴分层 -> 共识落盘 -> 验收说明”生成结构化共识草稿。
+- `docs/github-harvest-examples.md`：典型输入的 Before/After 和执行判断。
+- `docs/github-harvest-acceptance.md`：最小验收清单。
+
 ## 安装
 
 ```bash

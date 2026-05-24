@@ -148,6 +148,13 @@ def format_analysis_input(data: dict) -> str:
     readme = data.get("readme", {}).get("raw", "")
     structure = data.get("structure", {})
     code_files = data.get("code_files", {}).get("files", [])
+    skill_samples = data.get("code_files", {}).get("skill_samples", [])
+    skill_sample_paths = {item.get("path") or item.get("name") for item in skill_samples}
+    core_files = [
+        item
+        for item in code_files
+        if (item.get("path") or item.get("name")) not in skill_sample_paths
+    ]
     warnings = data.get("warnings", [])
     issues = data.get("issues", [])
     profile = infer_repo_profile(data)
@@ -198,9 +205,20 @@ def format_analysis_input(data: dict) -> str:
     lines.append(f"子目录：{', '.join(directories[:15])}")
     lines.append("")
 
+    # Skill samples
+    if skill_samples:
+        lines.append(f"## Skill 样本文件（共 {len(skill_samples)} 个）\n")
+        for f in skill_samples:
+            lines.append(f"### {f.get('name', '')}")
+            lines.append("```")
+            content = f.get("content", "")
+            lines.append(content[:1800])
+            lines.append("```")
+            lines.append("")
+
     # 核心代码文件
-    lines.append(f"## 核心代码文件（共 {len(code_files)} 个）\n")
-    for f in code_files:
+    lines.append(f"## 核心代码文件（共 {len(core_files)} 个）\n")
+    for f in core_files:
         lines.append(f"### {f.get('name', '')}")
         lines.append(f"```")
         content = f.get("content", "")

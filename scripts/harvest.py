@@ -77,6 +77,17 @@ CODE_EXTENSIONS = {
     ".hpp",
     ".sh",
 }
+MAX_SKILL_SAMPLES_TO_FETCH = 5
+SKILL_BUCKET_PRIORITY = {
+    "engineering": 0,
+    "productivity": 1,
+    "misc": 2,
+    "shared": 3,
+    "stable": 4,
+    "personal": 20,
+    "in-progress": 30,
+    "deprecated": 40,
+}
 
 
 def _run_gh_directory_listing(owner: str, repo: str, path: str, timeout: int = 10) -> tuple[list[dict], str | None]:
@@ -221,6 +232,56 @@ def _select_representative_files(
             break
 
     return [_fetch_repo_file(owner, repo, path) for path in selected_paths if path], errors
+
+
+def _select_skill_samples(owner: str, repo: str, *, limit: int = MAX_SKILL_SAMPLES_TO_FETCH) -> tuple[list[dict], list[str]]:
+    """Fetch representative SKILL.md files from one-level or bucketed skills directories."""
+    items, error = _run_gh_directory_listing(owner, repo, "skills")
+    if error:
+        return [], [f"目录 skills 抓取失败: {error}"]
+
+    samples: list[dict] = []
+    errors: list[str] = []
+    seen_paths: set[str] = set()
+    items = sorted(
+        items,
+        key=lambda item: (
+            SKILL_BUCKET_PRIORITY.get(item.get("name", ""), 10),
+            item.get("name", ""),
+        ),
+    )
+
+    for item in items:
+        if len(samples) >= limit:
+            break
+        if item.get("type") != "dir":
+            continue
+
+        base_path = item.get("path", "")
+        direct_path = f"{base_path}/SKILL.md"
+        direct_sample = _fetch_repo_file(owner, repo, direct_path)
+        if direct_sample:
+            _append_unique_file({"skill_samples": samples}, "skill_samples", direct_sample, seen_paths)
+            continue
+
+        nested_items, nested_error = _run_gh_directory_listing(owner, repo, base_path)
+        if nested_error:
+            if not _is_not_found_error(nested_error):
+                errors.append(f"目录 {base_path} 抓取失败: {nested_error}")
+            continue
+
+        for nested_item in nested_items:
+            if len(samples) >= limit:
+                break
+            if nested_item.get("type") != "dir":
+                continue
+            nested_path = f"{nested_item.get('path', '')}/SKILL.md"
+            nested_sample = _fetch_repo_file(owner, repo, nested_path)
+            if nested_sample:
+                _append_unique_file({"skill_samples": samples}, "skill_samples", nested_sample, seen_paths)
+                break
+
+    return samples, errors
 
 
 def _build_harvest_payload(
@@ -516,29 +577,21 @@ def fetch_key_files(owner: str, repo: str, structure: dict) -> dict:
     directories = structure.get("directories", [])
     # 2. 先抓 skills 样本，让技能框架类仓库不会被脚本/配置文件挤掉
     if "skills" in directories:
-        items, error = _run_gh_directory_listing(owner, repo, "skills")
-        if error:
-            errors.append(f"目录 skills 抓取失败: {error}")
-            issues.append(
-                _make_issue(
-                    stage="code_files",
-                    code="directory_listing_failed",
-                    target="skills",
-                    message=f"目录 skills 抓取失败：{error}",
-                )
+        skill_samples, skill_errors = _select_skill_samples(owner, repo)
+        errors.extend(skill_errors)
+        issues.extend(
+            _make_issue(
+                stage="code_files",
+                code="directory_listing_failed",
+                target=error_text.split("目录 ", 1)[1].split(" 抓取失败", 1)[0]
+                if error_text.startswith("目录 ")
+                else "skills",
+                message=error_text,
             )
-        else:
-            count = 0
-            for item in items:
-                if count >= 2:
-                    break
-                if item.get("type") != "dir":
-                    continue
-                skill_path = f"{item.get('path', '')}/SKILL.md"
-                file_data = _fetch_repo_file(owner, repo, skill_path)
-                if file_data:
-                    _append_unique_file(fetched, "skill_samples", file_data, seen_paths)
-                    count += 1
+            for error_text in skill_errors
+        )
+        for file_data in skill_samples:
+            _append_unique_file(fetched, "skill_samples", file_data, seen_paths)
 
     # 3. 抓取核心目录下的代表文件（必要时下钻一层）
     for d in directories:
@@ -616,16 +669,16 @@ def fetch_key_files(owner: str, repo: str, structure: dict) -> dict:
     selected = []
     selected.extend(fetched["entries"][:4])
     selected.extend(fetched["configs"][:3])
+    selected.extend(fetched["skill_samples"][:3])
     selected.extend(fetched["source"][:2])
-    selected.extend(fetched["skill_samples"][:1])
 
     remaining = MAX_FILES_TO_FETCH - len(selected)
     if remaining > 0:
         extras = (
             fetched["entries"][4:]
             + fetched["configs"][3:]
+            + fetched["skill_samples"][3:]
             + fetched["source"][2:]
-            + fetched["skill_samples"][1:]
         )
         selected.extend(extras[:remaining])
 
@@ -662,6 +715,7 @@ def fetch_key_files(owner: str, repo: str, structure: dict) -> dict:
     payload = {
         "total": len(all_files),
         "files": all_files,
+        "skill_samples": fetched["skill_samples"],
         "issues": issues,
         "coverage": {
             "entries": len(fetched["entries"]),
